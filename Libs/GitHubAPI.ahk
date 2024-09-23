@@ -45,11 +45,6 @@ class GitHubAPI {
         files := []
         result := JSON.Parse(response)
         for thing in result {
-            ; if InStr(thing["name"], ".") and StrSplit(thing["name"], ".")[2] == "ahk" {
-            ;     if thing["download_url"] != "null" {
-            ;         files.Push(["download_url"])
-            ;     }
-            ; }
             if thing["type"] == "file" {
                 files.Push(thing["name"])
             }
@@ -70,11 +65,6 @@ class GitHubAPI {
         dirs := []
         result := JSON.Parse(response)
         for thing in result {
-            ; if InStr(thing["name"], ".") and StrSplit(thing["name"], ".")[2] == "ahk" {
-            ;     if thing["download_url"] != "null" {
-            ;         files.Push(["download_url"])
-            ;     }
-            ; }
             if thing["type"] == "dir" {
                 dirs.Push(thing["name"])
             }
