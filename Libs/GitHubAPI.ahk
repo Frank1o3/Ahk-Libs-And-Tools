@@ -51,7 +51,9 @@ class GitHubAPI {
             ;     }
             ; }
             if thing["type"] == "dir" {
-                dirs.Push(thing["name"])
+                if thing["name"] == "Libs" {
+                    dirs.Push(thing["name"])
+                }
             }
         }
 
