@@ -42,6 +42,31 @@ class GitHubAPI {
         }
 
         ; Parse the JSON response
+        files := []
+        result := JSON.Parse(response)
+        for thing in result {
+            ; if InStr(thing["name"], ".") and StrSplit(thing["name"], ".")[2] == "ahk" {
+            ;     if thing["download_url"] != "null" {
+            ;         files.Push(["download_url"])
+            ;     }
+            ; }
+            if thing["type"] == "file" {
+                files.Push(thing["name"])
+            }
+        }
+
+        return files
+    }
+
+    ListRepoDirs(user, repo, path := "") {
+        endpoint := "/repos/" user "/" repo "/contents/" path
+        response := this.Request(endpoint)
+
+        if InStr(response, "Error") {
+            return response  ; If there's an error, return it
+        }
+
+        ; Parse the JSON response
         dirs := []
         result := JSON.Parse(response)
         for thing in result {
@@ -51,9 +76,7 @@ class GitHubAPI {
             ;     }
             ; }
             if thing["type"] == "dir" {
-                if thing["name"] == "Libs" {
-                    dirs.Push(thing["name"])
-                }
+                dirs.Push(thing["name"])
             }
         }
 
@@ -83,7 +106,7 @@ class GitHubAPI {
 github := GitHubAPI()  ; No token needed for free API access
 
 ; List all files in a repo and get their raw URLs
-files := github.ListRepoFiles("Frank1o3", "Python-Proxy")
+files := github.ListRepoFiles("Frank1o3", "Updater")
 
 for names in files {
     MsgBox names
