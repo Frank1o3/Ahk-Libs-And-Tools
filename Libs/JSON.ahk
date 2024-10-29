@@ -85,4 +85,27 @@ class JSON {
 
         return arr
     }
+    ; Converts a Map or Array back into a JSON string
+    static Stringify(data) {
+        if IsObject(data) {
+            if Type(data) == "Map" {
+                json := "{"
+                for key, value in data {
+                    json .= Format('"{}":{},', key, this.Stringify(value))
+                }
+                json := SubStr(json, 1, -1)  ; Remove last comma
+                return json . "}"
+            } else if Type(data) == "Array" {
+                json := "["
+                for _, value in data {
+                    json .= Format('{},', this.Stringify(value))
+                }
+                json := SubStr(json, 1, -1)  ; Remove last comma
+                return json . "]"
+            }
+        } else {
+            return Format('{}', data)  ; Handle strings and numbers
+        }
+    }
+
 }
