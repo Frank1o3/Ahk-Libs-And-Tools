@@ -1,3 +1,5 @@
+; This Lib is not mine i got it for a project i was making a long time ago its still works but idk who the author is D: )
+
 ; v1.62
 ;
 ;#####################################################################################
