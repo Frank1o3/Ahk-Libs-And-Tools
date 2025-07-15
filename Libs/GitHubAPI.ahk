@@ -20,7 +20,7 @@ class GitHubAPI {
         url := this.baseURL endpoint
         response := this.client.Get(url)
         ; Parse JSON response
-        return JSON.Parse(response)
+        return JSON.Load(response)
     }
 
     Request2(endpoint) {
@@ -83,7 +83,7 @@ class GitHubAPI {
         endpoint := "/repos/" user "/" repo "/contents/" dir
         response := this.Request(endpoint)
         files := []
-        result := JSON.Parse(response)
+        result := JSON.Load(response)
         for thing in result {
             if thing["type"] == "file" {
                 files.Push(thing["name"])
@@ -161,13 +161,6 @@ class GitHubAPI {
     ; Get the contents of a specific file in a repository
     GetFileContents(user, repo, filePath) {
         return this.Request2("/repos/" user "/" repo "/contents/" filePath)
-    }
-
-    ; Create a new issue in the repository
-    CreateIssue(user, repo, title, body := "") {
-        endpoint := "/repos/" user "/" repo "/issues"
-        issueData := JSON.Stringify('{ "title": "' title '", "body": "' body '"}')
-        return this.PostRequest(endpoint, issueData)
     }
 
     ; Star a repository

@@ -1,6 +1,8 @@
+#DllLoad msxml6.dll
+
 /*
 * Made by: Frank1o3
-* Version: 0.0.2
+* Version: 0.0.3
 * Implements: Basic HTTP protocols with manual timeout
 */
 
@@ -10,20 +12,33 @@ class Http {
         this.xhr := ComObject("Msxml2.XMLHTTP.6.0")
         this.ActiveRequests := Map()
         this.timeout := 30000  ; Default timeout (ms)
+        this.defaultHeaders := Map("User-Agent", "HttpClientV2/0.3 (+https://github.com/frank1o3)")
     }
 
     SetTimeout(timeout) {
         this.timeout := timeout
     }
 
-    Request(method, url, data := "", headers := "") {
-        this.xhr := ComObject("Msxml2.XMLHTTP.6.0")
-        this.xhr.open(method, url, true)  ; Must be async to allow timeout abort
-
+    ; Merge headers: user headers override defaults
+    _mergeHeaders(headers) {
+        merged := Map()
+        for name, value in this.defaultHeaders
+            merged[name] := value
         if IsObject(headers) {
             for name, value in headers
-                this.xhr.setRequestHeader(name, value)
+                merged[name] := value
         }
+        return merged
+    }
+
+    Request(method, url, data := "", headers := "") {
+        this.xhr := ComObject("Msxml2.XMLHTTP.6.0")
+        this.xhr.open(method, url, true)  ; Async to allow timeout
+
+        mergedHeaders := this._mergeHeaders(headers)
+
+        for name, value in mergedHeaders
+            this.xhr.setRequestHeader(name, value)
 
         response := ""
         done := false
@@ -55,15 +70,15 @@ class Http {
         reqId := A_TickCount . "-" . Random(1000, 9999)
         started := A_TickCount
 
+        mergedHeaders := this._mergeHeaders(headers)
+
         xhr.onreadystatechange := (*) => this._HandleResponse(reqId)
         this.ActiveRequests[reqId] := { xhr: xhr, callback: callback, start: started }
 
         xhr.open(method, url, true)
 
-        if IsObject(headers) {
-            for name, value in headers
-                xhr.setRequestHeader(name, value)
-        }
+        for name, value in mergedHeaders
+            xhr.setRequestHeader(name, value)
 
         try {
             xhr.send(StrLen(data) ? data : "")
@@ -98,7 +113,6 @@ class Http {
             SetTimer(this._MakeTimeoutChecker(reqId), 0)
             return
         }
-
     }
 
     _HandleResponse(reqId) {

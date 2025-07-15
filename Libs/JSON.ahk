@@ -10,47 +10,60 @@ class JSON {
         }
     }
 
-    ; ────────────────────────────────────────────────
-
     static _parseValue(text, &pos) {
         JSON._skipWhitespace(text, &pos)
         ch := SubStr(text, pos, 1)
-        if ch = "{"      ; object
+
+        if ch = "{" {
             return JSON._parseObject(text, &pos)
-        else if ch = "[" ; array
+        } else if ch = "[" {
             return JSON._parseArray(text, &pos)
-        else if ch = "" ""
+        } else if ch = "\`" " {
             return JSON._parseString(text, &pos)
-        else if RegExMatch(SubStr(text, pos), "^(true|false|null)", &m)
-            return JSON._parseLiteral(m[0], &pos)
-        else
+        } else if (SubStr(text, pos, 4) == "true"
+            || SubStr(text, pos, 5) = "false"
+            || SubStr(text, pos, 4) = "null") {
+            return JSON._parseLiteral(text, &pos)
+        } else {
             return JSON._parseNumber(text, &pos)
+        }
     }
+
 
     static _parseObject(text, &pos) {
         obj := Map()
         pos += 1
         JSON._skipWhitespace(text, &pos)
-        if SubStr(text, pos, 1) = "}"
-            return (pos += 1, obj)
+        if SubStr(text, pos, 1) = "}" {
+            pos += 1
+            return obj
+        }
 
         loop {
             JSON._skipWhitespace(text, &pos)
-            if SubStr(text, pos, 1) != "" ""
-                throw Error("Invalid object key")
+            if SubStr(text, pos, 1) != "\`" " {
+                throw Error("Invalid object key at position " . pos)
+            }
+
             key := JSON._parseString(text, &pos)
             JSON._skipWhitespace(text, &pos)
-            if SubStr(text, pos, 1) != ":"
-                throw Error("Expected ':' after key")
+
+            if SubStr(text, pos, 1) != ":" {
+                throw Error("Expected ':' after key at position " . pos)
+            }
             pos += 1
+
             value := JSON._parseValue(text, &pos)
             obj[key] := value
             JSON._skipWhitespace(text, &pos)
+
             ch := SubStr(text, pos, 1)
-            if ch = "}"
-                return (pos += 1, obj)
-            else if ch != ","
-                throw Error("Expected ',' or '}'")
+            if ch = "}" {
+                pos += 1
+                return obj
+            } else if ch != "," {
+                throw Error("Expected ',' or '}' at position " . pos)
+            }
             pos += 1
         }
     }
@@ -59,35 +72,42 @@ class JSON {
         arr := []
         pos += 1
         JSON._skipWhitespace(text, &pos)
-        if SubStr(text, pos, 1) = "]"
-            return (pos += 1, arr)
+        if SubStr(text, pos, 1) = "]" {
+            pos += 1
+            return arr
+        }
 
         loop {
             value := JSON._parseValue(text, &pos)
             arr.Push(value)
             JSON._skipWhitespace(text, &pos)
+
             ch := SubStr(text, pos, 1)
-            if ch = "]"
-                return (pos += 1, arr)
-            else if ch != ","
-                throw Error("Expected ',' or ']'")
+            if ch = "]" {
+                pos += 1
+                return arr
+            } else if ch != "," {
+                throw Error("Expected ',' or ']' at position " . pos)
+            }
             pos += 1
         }
     }
 
     static _parseString(text, &pos) {
-        pos += 1
+        pos += 1  ; Skip initial quote
         out := ""
+
         loop {
             if pos > StrLen(text)
-                throw Error("Unterminated string")
+                throw Error("Unterminated string at position " . pos)
+
             ch := SubStr(text, pos, 1)
-            if ch = "" ""
+            if ch = "\`" " {
                 break
-            else if ch = "\"
-            {
+            } else if ch = "\" {
                 pos += 1
                 esc := SubStr(text, pos, 1)
+
                 if esc = "n"
                     out .= "`n"
                 else if esc = "r"
@@ -98,32 +118,34 @@ class JSON {
                     out .= Chr(8)
                 else if esc = "f"
                     out .= Chr(12)
-                else if esc = "\"
+                else if esc = "\`" "
+                    out .= "\`" "
+                else if esc = "\`" "
                     out .= "\"
-                else if esc = "" ""
-                    out .= "" ""
                 else if esc = "u" {
                     hex := SubStr(text, pos + 1, 4)
                     if !RegExMatch(hex, "^[0-9a-fA-F]{4}$")
                         throw Error("Invalid Unicode escape: \u" . hex)
                     out .= Chr("0x" . hex)
                     pos += 4
-                } else
+                } else {
                     throw Error("Unknown escape: \" . esc)
-            }
-            else
+                }
+            } else {
                 out .= ch
+            }
             pos += 1
         }
-        pos += 1
+
+        pos += 1  ; Skip closing quote
         return out
     }
 
     static _parseNumber(text, &pos) {
-        match := ""
         RegExMatch(SubStr(text, pos), "^-?\d+(\.\d+)?([eE][+-]?\d+)?", &match)
         if !match[0]
-            throw Error("Invalid number at " . pos)
+            throw Error("Invalid number at position " . pos)
+
         pos += StrLen(match[0])
         return InStr(match[0], ".") || InStr(match[0], "e") || InStr(match[0], "E")
             ? match[0] + 0.0
@@ -131,20 +153,16 @@ class JSON {
     }
 
     static _parseLiteral(text, &pos) {
-        remaining := SubStr(text, pos)
-        if InStr(remaining, "true") = 1 {
+        if SubStr(text, pos, 4) = "true" {
             pos += 4
             return true
-        }
-        else if InStr(remaining, "false") = 1 {
+        } else if SubStr(text, pos, 5) = "false" {
             pos += 5
             return false
-        }
-        else if InStr(remaining, "null") = 1 {
+        } else if SubStr(text, pos, 4) = "null" {
             pos += 4
             return ""
-        }
-        else {
+        } else {
             throw Error("Invalid literal at position " . pos)
         }
     }
