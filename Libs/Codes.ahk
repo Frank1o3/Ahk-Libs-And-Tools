@@ -106,6 +106,7 @@ class StatusCodes {
     }
 
     static Get(code) {
+        code := code = 1223 ? 204 : code  ; Handle IE's 1223 as 204
         return StatusCodes._codes.Has(code) ? StatusCodes._codes[code] : "Unknown Status: " . code
     }
 
