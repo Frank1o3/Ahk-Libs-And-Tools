@@ -15,4 +15,4 @@ callback(status, msg) {
     Persistent(false)
 }
 
-client.AsyncRequest("GET", "http://httpbin.org/delay/2", callback)
+client.AsyncRequest("GET", "http://httpbin.org/delay/4", callback)
