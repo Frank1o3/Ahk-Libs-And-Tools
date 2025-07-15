@@ -7,7 +7,7 @@
 Class Http {
 
     __New() {
-        this.xhr := ComObject("Msxml2.XMLHTTP")
+        this.xhr := ComObject("Msxml2.XMLHTTP.6.0")
         this.ActiveRequests := Map()
     }
 
@@ -20,12 +20,10 @@ Class Http {
             }
         }
 
-        if StrLen(data) > 0 {
-            try {
-                this.xhr.send(data)
-            } catch Error as e {
-                return "Error: Failed to send request - " e.message
-            }
+        try {
+            this.xhr.send(data)
+        } catch Error as e {
+            return "Error: Failed to send request - " e.message
         }
         if this.xhr.status != 200 {
             return "Error: " this.xhr.status
@@ -48,9 +46,7 @@ Class Http {
             }
         }
 
-        if StrLen(data) > 0 {
-            xhr.send(data)
-        }
+        xhr.send(data)
     }
 
     _HandleResponse(reqId) {
