@@ -11,20 +11,28 @@ StatusCodes.Init()
 
 
 client := Http()
-client.SetTimeout(3000)
 
-callback(status, msg) {
-    MsgBox "Status: " StatusCodes.Get(status) . "`nResponse: " . msg
-}
+URL := "https://discord.com/api/webhooks/1394719446278340721/2S_RAuxA5AAMsQa9qg7wzvsUxD7b567o9kcFgVYiEvXE2pnWmRKFnBaQbmTCdXQRBSS4"
 
-client.AsyncRequest("GET", "http://httpbin.org/delay/1", callback)
-Sleep 5
-client.AsyncRequest("GET", "http://httpbin.org/delay/2", callback)
-Sleep 5
-client.AsyncRequest("GET", "http://httpbin.org/delay/3", callback)
-Sleep 5
-client.AsyncRequest("GET", "http://httpbin.org/delay/4", callback)
+data := Map()
 
-Sleep 1000 + 3000 + 4000 + 2000 - 15
+data["content"] := "" . A_TickCount
+data["embeds"] := [Map(
+    "title", "This is a test for the new HttpClientV2 library",
+    "description", "This ahk lib implements basic http request handling and usage",
+    "color", 0xd82d2d,
+    "fields", [
+        Map("name", "Implements", "value", "Basic HTTP protocols with manual timeout, asynchronous requests, and JSON handling")
+    ],
+    "author", Map("name", "Frank1o3")
+)]
 
-ExitApp
+data["attachments"] := []  ; Discord API requires this to be null if not used
+data["username"] := A_ScriptName ; Set a custom username for the webhook
+data["tts"] := false  ; Text-to-speech option
+
+
+client.AsyncRequest("POST", URL,
+    (status, msg?, body?) => (MsgBox("Status: " . StatusCodes.Get(status) . "`nResponse: " . msg . "`nBody: " . body), ExitApp()),
+    data
+)

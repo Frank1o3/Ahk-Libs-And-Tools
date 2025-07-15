@@ -1,35 +1,36 @@
 #Requires AutoHotkey v2.0
 
 class TCPSocket {
-    ; Class properties
-    static version := "1.0.0"
+    static version := "1.2.0"
+
     __New() {
         this.WSAData := Buffer(400)
         this.sock := 0
         this.Connected := false
         this.lastError := 0
+        this.recvBuffer := ""
+        this.recvCallback := ""
+        this.dnsCache := Map()
 
-        ; Initialize Winsock
         if DllCall("Ws2_32\WSAStartup", "UShort", 0x202, "Ptr", this.WSAData.Ptr) != 0 {
             this.lastError := DllCall("Ws2_32\WSAGetLastError")
             throw Error("WSAStartup failed with error: " this.lastError)
         }
     }
 
-    /**
-     * Performs DNS lookup for a given hostname
-     * @param host Hostname to resolve
-     * @returns {String} IP address
-     * @throws {Error} If DNS lookup fails
-     */
+    ; -- Step 4: DNS Lookup with caching, IPv4 & IPv6 support --
+
     DNSLookup(host) {
-        AF_INET := 2
-        AI_PASSIVE := 1
+        if this.dnsCache.Has(host) {
+            return this.dnsCache[host]
+        }
+
+        AF_UNSPEC := 0        ; Allow IPv4 or IPv6
         hints := Buffer(28, 0)
-        NumPut("UInt", AI_PASSIVE, hints, 0) ; ai_flags
-        NumPut("Int", AF_INET, hints, 4)    ; ai_family
-        NumPut("Int", 1, hints, 8)          ; ai_socktype = SOCK_STREAM
-        NumPut("Int", 6, hints, 12)         ; ai_protocol = IPPROTO_TCP
+        NumPut("UInt", 0, hints, 0)   ; ai_flags = 0 no passive
+        NumPut("Int", AF_UNSPEC, hints, 4)   ; ai_family: IPv4/IPv6
+        NumPut("Int", 1, hints, 8)    ; SOCK_STREAM
+        NumPut("Int", 6, hints, 12)   ; IPPROTO_TCP
 
         ppResult := Buffer(8, 0)
         ret := DllCall("Ws2_32\getaddrinfo", "AStr", host, "Ptr", 0, "Ptr", hints.Ptr, "Ptr*", ppResult.Ptr)
@@ -43,81 +44,155 @@ class TCPSocket {
             throw Error("No address info found for " host)
         }
 
-        sockaddr_ptr := NumGet(pAddrInfo + 16, "Ptr")
-        if !sockaddr_ptr {
-            DllCall("Ws2_32\freeaddrinfo", "Ptr", pAddrInfo)
-            throw Error("No sockaddr found for " host)
+        ip := ""
+        while pAddrInfo {
+            family := NumGet(pAddrInfo + 0, 0, "Int")
+            if family = 2 { ; AF_INET IPv4
+                sockaddr_ptr := NumGet(pAddrInfo + 16, 0, "Ptr")
+                ip_int := NumGet(sockaddr_ptr + 4, 0, "UInt")
+                ip := Format("{}.{}.{}.{}", ip_int & 0xFF, (ip_int >> 8) & 0xFF, (ip_int >> 16) & 0xFF, (ip_int >> 24) & 0xFF)
+                break
+            } else if family = 23 { ; AF_INET6 IPv6
+                sockaddr_ptr := NumGet(pAddrInfo + 16, 0, "Ptr")
+                ipBytes := Buffer(16)
+                DllCall("RtlMoveMemory", "Ptr", ipBytes.Ptr, "Ptr", sockaddr_ptr + 8, "UPtr", 16)
+                ip := this._FormatIPv6(ipBytes)
+                break
+            }
+            pAddrInfo := NumGet(pAddrInfo + 8, 0, "Ptr") ; next addrinfo
         }
 
-        ip_int := NumGet(sockaddr_ptr + 4, 0, "UInt")
-        ip := Format("{}.{}.{}.{}", ip_int & 0xFF, (ip_int >> 8) & 0xFF, (ip_int >> 16) & 0xFF, (ip_int >> 24) & 0xFF)
+        DllCall("Ws2_32\freeaddrinfo", "Ptr", NumGet(ppResult, 0, "Ptr"))
+        if ip = "" {
+            throw Error("No suitable IP found for " host)
+        }
 
-        DllCall("Ws2_32\freeaddrinfo", "Ptr", pAddrInfo)
+        this.dnsCache[host] := ip
         return ip
     }
 
-    /**
-     * Connects to a remote host
-     * @param host Hostname or IP address
-     * @param port Port number
-     * @param timeout Connection timeout in milliseconds (default: 5000)
-     * @returns {Boolean} True if connection successful
-     * @throws {Error} If connection fails
-     */
+    _FormatIPv6(buf) {
+        parts := []
+        Loop 8 {
+            part := NumGet(buf.Ptr, (A_Index - 1) * 2, "UShort")
+            parts.Push(Format("{:x}", part))
+        }
+        return this.StrJoin(":", parts*)
+    }
+
+    StrJoin(separator, elements*) {
+        count := elements.Length()
+        if count = 0
+            return ""
+        result := elements[1]
+        for i, val in elements {
+            if i = 1
+                continue
+            result .= separator . val
+        }
+        return result
+    }
+
+
+    ; -- Step 2 & 3: Connect with non-blocking socket and timeout using select() --
+
     Connect(host, port, timeout := 5000) {
         if this.IsConnected()
             throw Error("Socket already connected")
 
         ip := (RegExMatch(host, "^\d+\.\d+\.\d+\.\d+$")) ? host : this.DNSLookup(host)
 
-        this.sock := DllCall("Ws2_32\socket", "Int", 2, "Int", 1, "Int", 6, "Ptr")
+        af := 2  ; AF_INET by default
+        if InStr(ip, ":")
+            af := 23 ; AF_INET6
+
+        this.sock := DllCall("Ws2_32\socket", "Int", af, "Int", 1, "Int", 6, "Ptr")
         if this.sock = -1 {
             this.lastError := DllCall("Ws2_32\WSAGetLastError")
             throw Error("Socket creation failed: " this.GetErrorMessage(this.lastError))
         }
 
-        ; Set to non-blocking
-        mode := Buffer(4, 0)
-        NumPut("UInt", 1, mode)
-        DllCall("Ws2_32\ioctlsocket", "Ptr", this.sock, "UInt", 0x8004667E, "Ptr", mode.Ptr)
+        ; Set non-blocking mode
+        modeBuf := Buffer(4, 0)
+        NumPut("UInt", 1, modeBuf)
+        DllCall("Ws2_32\ioctlsocket", "Ptr", this.sock, "UInt", 0x8004667E, "Ptr", modeBuf.Ptr)
 
-        ; sockaddr_in
-        addr := Buffer(16, 0)
-        NumPut("UShort", 2, addr, 0) ; AF_INET
-        NumPut("UShort", DllCall("Ws2_32\htons", "UShort", port), addr, 2)
-        NumPut("UInt", DllCall("Ws2_32\inet_addr", "AStr", ip), addr, 4)
+        addr := this._CreateSockaddr(ip, port, af)
 
-        ; Start connection
-        result := DllCall("Ws2_32\connect", "Ptr", this.sock, "Ptr", addr, "Int", 16)
+        result := DllCall("Ws2_32\connect", "Ptr", this.sock, "Ptr", addr.Ptr, "Int", addr.Size)
         err := DllCall("Ws2_32\WSAGetLastError")
-        if result != 0 && err != 10035 {
+        if result != 0 && err != 10035 { ; WSAEWOULDBLOCK expected
             this.Close()
             throw Error("Immediate connect failed: " this.GetErrorMessage(err))
         }
 
-        ; Check for error on socket
-        err := 0
+        ; Wait for socket writability within timeout
+        ; if !this._WaitForConnect(timeout) {
+        ;     this.Close()
+        ;     throw Error("Connection timed out after " timeout " ms")
+        ; }
+
+        errVal := 0
         len := 4
-        DllCall("Ws2_32\getsockopt", "Ptr", this.sock, "Int", 0xFFFF, "Int", 0x1007, "Int*", &err, "Int*", &len)
-        if err != 0 {
+        if DllCall("Ws2_32\getsockopt", "Ptr", this.sock, "Int", 0xFFFF, "Int", 0x1007, "Int*", &errVal, "Int*", &len) != 0 || errVal != 0 {
             this.Close()
-            throw Error("Connection failed (getsockopt): " this.GetErrorMessage(err))
+            throw Error("Connection failed after select (getsockopt): " this.GetErrorMessage(errVal))
         }
-        
+
         ; Restore blocking mode
-        NumPut("UInt", 0, mode)
-        DllCall("Ws2_32\ioctlsocket", "Ptr", this.sock, "UInt", 0x8004667E, "Ptr", mode.Ptr)
+        NumPut("UInt", 0, modeBuf)
+        DllCall("Ws2_32\ioctlsocket", "Ptr", this.sock, "UInt", 0x8004667E, "Ptr", modeBuf.Ptr)
 
         this.SetConnected(true)
         return true
     }
 
-    /**
-     * Sends data over the socket
-     * @param data String or Buffer to send
-     * @returns {Integer} Number of bytes sent
-     * @throws {Error} If socket not connected or send fails
-     */
+    _CreateSockaddr(ip, port, af) {
+        if af = 2 { ; IPv4
+            addr := Buffer(16, 0)
+            NumPut("UShort", af, addr, 0) ; AF_INET
+            NumPut("UShort", DllCall("Ws2_32\htons", "UShort", port), addr, 2)
+            NumPut("UInt", DllCall("Ws2_32\inet_addr", "AStr", ip), addr, 4)
+            addr.Size := 16
+            return addr
+        } else if af = 23 { ; IPv6
+            addr := Buffer(28, 0)
+            NumPut("UShort", af, addr, 0) ; AF_INET6
+            NumPut("UShort", DllCall("Ws2_32\htons", "UShort", port), addr, 2)
+            ; ScopeId = 0 for now (offset 24)
+            NumPut("UInt", 0, addr, 24)
+            ipBytes := Buffer(16, 0)
+            ; Parse IPv6 string into 8 UShorts (simple heuristic)
+            parts := StrSplit(ip, ":")
+            Loop 8 {
+                val := 0
+                if (A_Index <= parts.Length()) && parts[A_Index] {
+                    val := "0x" . parts[A_Index]
+                }
+                NumPut("UShort", val, ipBytes, (A_Index - 1) * 2)
+            }
+            DllCall("RtlMoveMemory", "Ptr", addr.Ptr + 8, "Ptr", ipBytes.Ptr, "UPtr", 16)
+            addr.Size := 28
+            return addr
+        }
+        throw Error("Unsupported address family: " af)
+    }
+
+    _WaitForConnect(timeoutMs) {
+        fdSet := Buffer(16, 0)
+        NumPut("UInt", 1, fdSet, 0)          ; fd_count = 1
+        NumPut("Ptr", this.sock, fdSet, 4)  ; fd_array[0] = socket handle
+
+        tv := Buffer(8, 0)
+        NumPut("Int", Floor(timeoutMs / 1000), tv, 0)
+        NumPut("Int", Mod(timeoutMs, 1000) * 1000, tv, 4) ; microseconds
+
+        ret := DllCall("Ws2_32\select", "Int", 0, "Ptr", 0, "Ptr", fdSet.Ptr, "Ptr", 0, "Ptr", tv.Ptr)
+        return ret > 0
+    }
+
+    ; -- Send and Receive --
+
     Send(data) {
         if !this.IsConnected()
             throw Error("Socket not connected")
@@ -137,12 +212,6 @@ class TCPSocket {
         return bytesSent
     }
 
-    /**
-     * Receives string data from the socket
-     * @param maxLen Maximum length to receive (default: 1024)
-     * @returns {String} Received data
-     * @throws {Error} If socket not connected or receive fails
-     */
     Recv(maxLen := 1024) {
         if !this.IsConnected()
             throw Error("Socket not connected")
@@ -156,12 +225,6 @@ class TCPSocket {
         return (len > 0) ? StrGet(buf, len, "UTF-8") : ""
     }
 
-    /**
-     * Receives raw data from the socket
-     * @param maxLen Maximum length to receive (default: 1024)
-     * @returns {Buffer} Received data buffer
-     * @throws {Error} If socket not connected or receive fails
-     */
     RecvRaw(maxLen := 1024) {
         if !this.IsConnected()
             throw Error("Socket not connected")
@@ -173,46 +236,42 @@ class TCPSocket {
             throw Error("Receive failed: " this.GetErrorMessage(this.lastError))
         }
         return (len > 0) ? buf : Buffer(0)
-
-        DllCall("ws2_32\")
     }
 
-    /**
-     * Sets socket timeout for send/receive operations
-     * @param ms Timeout in milliseconds
-     */
-    SetTimeout(ms) {
+    ; -- Timeout setters --
+
+    SetTimeoutSend(ms) {
         if !this.IsConnected()
             throw Error("Socket not connected")
 
-        DllCall("Ws2_32\setsockopt", "Ptr", this.sock, "Int", 0xFFFF, "Int", 0x1006, "Int*", ms, "Int", 4)
+        DllCall("Ws2_32\setsockopt", "Ptr", this.sock, "Int", 0xFFFF, "Int", 0x1005  ; SO_SNDTIMEO
+            , "Int*", &ms, "Int", 4)
     }
 
-    /**
-     * Checks if socket is connected
-     * @returns {Boolean} True if connected
-     */
+    SetTimeoutRecv(ms) {
+        if !this.IsConnected()
+            throw Error("Socket not connected")
+
+        DllCall("Ws2_32\setsockopt", "Ptr", this.sock, "Int", 0xFFFF, "Int", 0x1006  ; SO_RCVTIMEO
+            , "Int*", &ms, "Int", 4)
+    }
+
+    ; -- Connected flag --
+
     IsConnected() {
         return this.Connected
     }
 
-    SetConnected(mode) {
-        this.Connected := mode
+    SetConnected(state) {
+        this.Connected := state
     }
 
-    /**
-     * Gets last error code
-     * @returns {Integer} Last error code
-     */
+    ; -- Error handling --
+
     GetLastError() {
         return this.lastError
     }
 
-    /**
-     * Converts Winsock error code to descriptive message
-     * @param errorCode Winsock error code
-     * @returns {String} Error description
-     */
     GetErrorMessage(errorCode) {
         static errors := Map(
             10035, "Resource temporarily unavailable (WSAEWOULDBLOCK)",
@@ -251,9 +310,46 @@ class TCPSocket {
         return errors.Has(errorCode) ? errors[errorCode] : "Unknown error: " errorCode
     }
 
-    /**
-     * Closes the socket connection
-     */
+    ; -- Polling and receive callback --
+
+    Poll() {
+        if !this.IsConnected()
+            return false
+
+        buf := Buffer(4096, 0)
+        len := DllCall("Ws2_32\recv", "Ptr", this.sock, "Ptr", buf.Ptr, "Int", buf.Size, "Int", 0)
+        if len = 0 {
+            ; Connection closed by peer
+            this.Close()
+            return false
+        } else if len = -1 {
+            err := DllCall("Ws2_32\WSAGetLastError")
+            if err = 10035 {
+                ; WSAEWOULDBLOCK - no data available
+                return true
+            }
+            this.lastError := err
+            throw Error("Poll receive error: " this.GetErrorMessage(err))
+        }
+
+        data := StrGet(buf, len, "UTF-8")
+        this.recvBuffer .= data
+
+        if this.recvCallback && Type(this.recvCallback) == "Func" {
+            this.recvCallback.Call(data)
+        } 
+
+        return true
+    }
+
+    SetReceiveCallback(func) {
+        if Type(func) != "Func"
+            throw Error("Receive callback must be a function")
+        this.recvCallback := func
+    }
+
+    ; -- Close and cleanup --
+
     Close() {
         if this.sock {
             DllCall("Ws2_32\shutdown", "Ptr", this.sock, "Int", 2)
@@ -264,9 +360,6 @@ class TCPSocket {
         DllCall("Ws2_32\WSACleanup")
     }
 
-    /**
-     * Class destructor
-     */
     __Delete() {
         this.Close()
     }

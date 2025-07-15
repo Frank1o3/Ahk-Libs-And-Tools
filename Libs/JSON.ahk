@@ -10,6 +10,57 @@ class JSON {
         }
     }
 
+    static Stringify(value) {
+        if IsObject(value) {
+            if value is Array
+                return JSON._stringifyArray(value)
+            else
+                return JSON._stringifyObject(value)
+        } else if Type(value) = "String" {
+            return JSON._escapeString(value)
+        } else if Type(value) = "Integer" || Type(value) = "Float" {
+            return value
+        } else if value = true {
+            return "true"
+        } else if value = false {
+            return "false"
+        } else if value = "" {
+            return "null"
+        } else {
+            throw Error("Unsupported type in JSON stringify: " Type(value))
+        }
+    }
+
+    static _stringifyObject(obj) {
+        items := []
+        for key, val in obj
+            items.Push(JSON._escapeString(key) ":" JSON.Stringify(val))
+        return "{" . JSON.StrJoin(",", items*) . "}"
+    }
+
+    static _stringifyArray(arr) {
+        items := []
+        for index, val in arr
+            items.Push(JSON.Stringify(val))
+        return "[" . JSON.StrJoin(",", items*) . "]"
+    }
+
+    static _escapeString(str) {
+        esc := Map("`"", "\\\`" ", "\ `"", "\\\\", "`n", "\\n", "`r", "\\r", "`t", "\\t", "/", "\\/")
+        out := "`""
+        Loop Parse, str
+        {
+            c := A_LoopField
+            if esc.Has(c)
+                out .= esc[c]
+            else if Ord(c) < 32
+                out .= Format("\\u{:04X}", Ord(c))
+            else
+                out .= c
+        }
+        return out . "`""
+    }
+
     static _parseValue(text, &pos) {
         JSON._skipWhitespace(text, &pos)
         ch := SubStr(text, pos, 1)
@@ -175,5 +226,18 @@ class JSON {
                 break
             pos += 1
         }
+    }
+
+    static StrJoin(separator, elements*) {
+        count := elements.length
+        if count = 0
+            return ""
+        result := elements[1]
+        for i, val in elements {
+            if i = 1
+                continue
+            result .= separator . val
+        }
+        return result
     }
 }

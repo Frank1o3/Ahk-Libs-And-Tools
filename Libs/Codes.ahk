@@ -106,7 +106,7 @@ class StatusCodes {
     }
 
     static Get(code) {
-        return StatusCodes._codes.Has(code) ? StatusCodes._codes[code] : "Unknown Status"
+        return StatusCodes._codes.Has(code) ? StatusCodes._codes[code] : "Unknown Status: " . code
     }
 
     static Exists(code) {

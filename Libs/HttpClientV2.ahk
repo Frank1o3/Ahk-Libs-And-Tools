@@ -1,3 +1,4 @@
+#Include JSON.ahk
 #DllLoad msxml6.dll
 
 /*
@@ -67,7 +68,7 @@ class Http {
         return response
     }
 
-    AsyncRequest(method, url, callback, data := "", headers := "") {
+    AsyncRequest(method, url, callback, data, headers := "") {
         xhr := ComObject("Msxml2.XMLHTTP.6.0")
         reqId := A_TickCount . "-" . Random(1000, 9999)
         started := A_TickCount
@@ -79,17 +80,21 @@ class Http {
 
         xhr.open(method, url, true)
 
-        for name, value in mergedHeaders
+        for name, value in mergedHeaders {
             xhr.setRequestHeader(name, value)
+        }
 
         try {
+            if Type(data) != "String" {
+                data := JSON.Stringify(data)
+            }
             xhr.send(StrLen(data) ? data : "")
         } catch Error as e {
             callback.Call(-1, "Error: Send failed - " e.Message)
             return
         }
 
-        SetTimer(this._MakeTimeoutChecker(reqId), 100)
+        SetTimer(this._MakeTimeoutChecker(reqId), 50)
     }
 
     _MakeTimeoutChecker(reqId) {
@@ -128,7 +133,7 @@ class Http {
         if xhr.readyState = 4 {
             this.ActiveRequests.Delete(reqId)
             try {
-                callback.Call(xhr.status, xhr.responseText)
+                callback.Call(xhr.status, xhr.responseText, xhr.responseBody)
             } catch Error as e {
                 callback.Call(xhr.status, "Error: " e.Message)
             }
