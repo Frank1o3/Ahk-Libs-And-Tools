@@ -1,58 +1,109 @@
 /*
 * Made by: Frank1o3
-* Version: 0.0.1
-* Implements: Basic Http protocals
+* Version: 0.0.3
+* Implements: Basic HTTP protocols with manual timeout
 */
 
-Class Http {
+class Http {
 
     __New() {
         this.xhr := ComObject("Msxml2.XMLHTTP.6.0")
         this.ActiveRequests := Map()
+        this.timeout := 30000  ; Default timeout (ms)
+    }
+
+    SetTimeout(timeout) {
+        this.timeout := timeout
     }
 
     Request(method, url, data := "", headers := "") {
-        this.xhr.open(method, url, false)
+        this.xhr := ComObject("Msxml2.XMLHTTP.6.0")
+        this.xhr.open(method, url, true)  ; Must be async to allow timeout abort
 
         if IsObject(headers) {
-            for name, value in headers {
+            for name, value in headers
                 this.xhr.setRequestHeader(name, value)
-            }
         }
 
+        response := ""
+        done := false
+
+        this.xhr.onreadystatechange := (*) => (
+            this.xhr.readyState = 4 ? (done := true, response := this.xhr.responseText) : ""
+        )
+
         try {
-            this.xhr.send(data)
+            this.xhr.send(StrLen(data) ? data : "")
         } catch Error as e {
-            return "Error: Failed to send request - " e.message
+            return "Error: Send failed - " e.Message
         }
-        if this.xhr.status != 200 {
-            return "Error: " this.xhr.status
+
+        start := A_TickCount
+        while !done {
+            if A_TickCount - start >= this.timeout {
+                try this.xhr.abort()
+                return "Error: Request timed out"
+            }
+            Sleep(10)
         }
-        return this.xhr.responseText
+
+        return response
     }
 
     AsyncRequest(method, url, callback, data := "", headers := "") {
-        xhr := ComObject("Msxml2.XMLHTTP")
+        xhr := ComObject("Msxml2.XMLHTTP.6.0")
         reqId := A_TickCount . "-" . Random(1000, 9999)
-
-        this.ActiveRequests[reqId] := { xhr: xhr, callback: callback }
+        started := A_TickCount
 
         xhr.onreadystatechange := (*) => this._HandleResponse(reqId)
+        this.ActiveRequests[reqId] := { xhr: xhr, callback: callback, start: started }
+
         xhr.open(method, url, true)
 
         if IsObject(headers) {
-            for name, value in headers {
+            for name, value in headers
                 xhr.setRequestHeader(name, value)
-            }
         }
 
-        xhr.send(data)
+        try {
+            xhr.send(StrLen(data) ? data : "")
+        } catch Error as e {
+            callback.Call(-1, "Error: Send failed - " e.Message)
+            return
+        }
+
+        SetTimer(this._MakeTimeoutChecker(reqId), 100)
+    }
+
+    _MakeTimeoutChecker(reqId) {
+        return ObjBindMethod(this, "_CheckTimeout", reqId)
+    }
+
+    _CheckTimeout(reqId) {
+        if !this.ActiveRequests.Has(reqId) {
+            SetTimer(this._MakeTimeoutChecker(reqId), 0)
+            return
+        }
+
+        data := this.ActiveRequests[reqId]
+        if A_TickCount - data.start >= this.timeout {
+            try data.xhr.abort()
+            data.callback.Call(-1, "Error: Async request timed out")
+            this.ActiveRequests.Delete(reqId)
+            SetTimer(this._MakeTimeoutChecker(reqId), 0)
+            return
+        }
+
+        if data.xhr.readyState = 4 {
+            SetTimer(this._MakeTimeoutChecker(reqId), 0)
+            return
+        }
+
     }
 
     _HandleResponse(reqId) {
-        if !this.ActiveRequests.Has(reqId) {
+        if !this.ActiveRequests.Has(reqId)
             return
-        }
 
         data := this.ActiveRequests[reqId]
         xhr := data.xhr
@@ -62,6 +113,8 @@ Class Http {
             this.ActiveRequests.Delete(reqId)
             try {
                 callback.Call(xhr.status, xhr.responseText)
+            } catch Error as e {
+                callback.Call(xhr.status, "Error: " e.Message)
             }
         }
     }

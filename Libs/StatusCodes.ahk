@@ -1,6 +1,10 @@
 ; Status codes
 statusCodes := Map()
 
+CodeToMSG(code) {
+    return statusCodes.Has(code) ? statusCodes[code] : ""
+}
+
 add(start, end, mmap, msg := "Unassigned") {
     Loop end - start + 1 {
         code := A_Index + start - 1
