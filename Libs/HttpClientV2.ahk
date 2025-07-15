@@ -13,6 +13,8 @@ class Http {
         this.ActiveRequests := Map()
         this.timeout := 30000  ; Default timeout (ms)
         this.defaultHeaders := Map("User-Agent", "HttpClientV2/0.3 (+https://github.com/frank1o3)")
+        this.defaultHeaders["Accept"] := "application/json, text/plain, */*"
+        this.defaultHeaders["Content-Type"] := "application/json"
     }
 
     SetTimeout(timeout) {
