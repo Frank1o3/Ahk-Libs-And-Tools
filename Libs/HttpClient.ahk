@@ -54,6 +54,10 @@ class HttpClient {
             return "Error: Failed to send request - " e.message
         }
 
+        while (req.readyState != 4) {
+            Sleep(10)  ; Wait for the request to complete
+        }
+
         ; Error management for non-200 status codes
         if req.status != 200 {
             return "Error: " req.status " - " req.statusText

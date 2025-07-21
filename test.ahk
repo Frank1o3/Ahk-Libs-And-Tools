@@ -9,7 +9,7 @@ StatusCodes.Init()
 
 client := Http()
 
-URL := "https://discord.com/api/webhooks/1394719446278340721/2S_RAuxA5AAMsQa9qg7wzvsUxD7b567o9kcFgVYiEvXE2pnWmRKFnBaQbmTCdXQRBSS4"
+URL := "https://discord.com/api/webhooks/1394736582023450844/q9THFQrol2KBSSsVVeqWQOy3zZ8UBNHXwnIr2naisWjl14DRHgAyJqEa7qFJY_LFPTWT"
 
 data := Map()
 
@@ -30,6 +30,9 @@ data["tts"] := false  ; Text-to-speech option
 
 
 client.AsyncRequest("POST", URL,
-    (status, msg?, body?) => (MsgBox("Status: " . StatusCodes.Get(status) . "`nResponse: " . msg . "`nBody: " . body), ExitApp()),
+    (status, msg?, body?) => (
+        MsgBox("Status: " . StatusCodes.Get(status) . "`nResponse: " . msg . "`nBody: " . body),
+        ExitApp()
+    ),
     data
 )

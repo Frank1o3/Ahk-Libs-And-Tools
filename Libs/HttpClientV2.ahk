@@ -51,6 +51,9 @@ class Http {
         )
 
         try {
+            if Type(data) != "String" {
+                data := JSON.Stringify(data)
+            }
             this.xhr.send(StrLen(data) ? data : "")
         } catch Error as e {
             return "Error: Send failed - " e.Message

@@ -46,38 +46,40 @@ class JSON {
     }
 
     static _escapeString(str) {
-        esc := Map("`"", "\\\`" ", "\ `"", "\\\\", "`n", "\\n", "`r", "\\r", "`t", "\\t", "/", "\\/")
-        out := "`""
+        esc := Map('"', '\"', "\", "\\", "`n", "\n", "`r", "\r", "`t", "\t", "/", "\/")
+        out := '"'
         Loop Parse, str
         {
             c := A_LoopField
             if esc.Has(c)
-                out .= esc[c]
+                out .= "\" . esc[c]
             else if Ord(c) < 32
-                out .= Format("\\u{:04X}", Ord(c))
+                out .= Format("\u{:04X}", Ord(c))
             else
                 out .= c
         }
-        return out . "`""
+        return out . '"'
     }
 
     static _parseValue(text, &pos) {
         JSON._skipWhitespace(text, &pos)
         ch := SubStr(text, pos, 1)
-
-        if ch = "{" {
+        if ch = '{'
             return JSON._parseObject(text, &pos)
-        } else if ch = "[" {
+        else if ch = '['
             return JSON._parseArray(text, &pos)
-        } else if ch = "\`" " {
+        else if ch = '"'
             return JSON._parseString(text, &pos)
-        } else if (SubStr(text, pos, 4) == "true"
-            || SubStr(text, pos, 5) = "false"
-            || SubStr(text, pos, 4) = "null") {
-            return JSON._parseLiteral(text, &pos)
-        } else {
+        else if RegExMatch(SubStr(text, pos), "^-?\d")  ; check for number
             return JSON._parseNumber(text, &pos)
-        }
+        else if SubStr(text, pos, 4) = "true"
+            return JSON._parseLiteral(text, &pos)
+        else if SubStr(text, pos, 5) = "false"
+            return JSON._parseLiteral(text, &pos)
+        else if SubStr(text, pos, 4) = "null"
+            return JSON._parseLiteral(text, &pos)
+        else
+            throw Error("Invalid value at position " . pos)
     }
 
 
@@ -92,16 +94,14 @@ class JSON {
 
         loop {
             JSON._skipWhitespace(text, &pos)
-            if SubStr(text, pos, 1) != "\`" " {
+            if SubStr(text, pos, 1) != '"'
                 throw Error("Invalid object key at position " . pos)
-            }
 
             key := JSON._parseString(text, &pos)
             JSON._skipWhitespace(text, &pos)
 
-            if SubStr(text, pos, 1) != ":" {
+            if SubStr(text, pos, 1) != ":"
                 throw Error("Expected ':' after key at position " . pos)
-            }
             pos += 1
 
             value := JSON._parseValue(text, &pos)
@@ -121,44 +121,44 @@ class JSON {
 
     static _parseArray(text, &pos) {
         arr := []
-        pos += 1
+        pos += 1  ; skip '['
         JSON._skipWhitespace(text, &pos)
         if SubStr(text, pos, 1) = "]" {
             pos += 1
             return arr
         }
-
         loop {
             value := JSON._parseValue(text, &pos)
             arr.Push(value)
             JSON._skipWhitespace(text, &pos)
-
             ch := SubStr(text, pos, 1)
             if ch = "]" {
                 pos += 1
-                return arr
-            } else if ch != "," {
-                throw Error("Expected ',' or ']' at position " . pos)
+                break
+            } else if ch = "," {
+                pos += 1
+                continue
+            } else {
+                throw Error("Expected ',' or ']' in array at position " . pos)
             }
-            pos += 1
         }
+        return arr
     }
 
-    static _parseString(text, &pos) {
-        pos += 1  ; Skip initial quote
-        out := ""
 
+    static _parseString(text, &pos) {
+        pos += 1
+        out := ""
         loop {
             if pos > StrLen(text)
                 throw Error("Unterminated string at position " . pos)
 
             ch := SubStr(text, pos, 1)
-            if ch = "\`" " {
+            if ch = '"' {
                 break
             } else if ch = "\" {
                 pos += 1
                 esc := SubStr(text, pos, 1)
-
                 if esc = "n"
                     out .= "`n"
                 else if esc = "r"
@@ -169,11 +169,11 @@ class JSON {
                     out .= Chr(8)
                 else if esc = "f"
                     out .= Chr(12)
-                else if esc = "\`" "
-                    out .= "\`" "
-                else if esc = "\`" "
+                else if esc = '"' {
+                    out .= '"'
+                } else if esc = "\" {
                     out .= "\"
-                else if esc = "u" {
+                } else if esc = "u" {
                     hex := SubStr(text, pos + 1, 4)
                     if !RegExMatch(hex, "^[0-9a-fA-F]{4}$")
                         throw Error("Invalid Unicode escape: \u" . hex)
@@ -187,8 +187,7 @@ class JSON {
             }
             pos += 1
         }
-
-        pos += 1  ; Skip closing quote
+        pos += 1
         return out
     }
 
@@ -196,7 +195,6 @@ class JSON {
         RegExMatch(SubStr(text, pos), "^-?\d+(\.\d+)?([eE][+-]?\d+)?", &match)
         if !match[0]
             throw Error("Invalid number at position " . pos)
-
         pos += StrLen(match[0])
         return InStr(match[0], ".") || InStr(match[0], "e") || InStr(match[0], "E")
             ? match[0] + 0.0
@@ -218,7 +216,6 @@ class JSON {
         }
     }
 
-
     static _skipWhitespace(text, &pos) {
         while pos <= StrLen(text) {
             ch := SubStr(text, pos, 1)
@@ -229,7 +226,7 @@ class JSON {
     }
 
     static StrJoin(separator, elements*) {
-        count := elements.length
+        count := elements.Length
         if count = 0
             return ""
         result := elements[1]

@@ -17,17 +17,16 @@ class GitHubAPI {
 
     ; Generic method to make GET requests to GitHub API
     Request(endpoint) {
-        url := this.baseURL endpoint
+        url := this.baseURL . endpoint
         response := this.client.Get(url)
-        ; Parse JSON response
-        return JSON.Load(response)
-    }
 
-    Request2(endpoint) {
-        url := this.baseURL endpoint
-        response := this.client.Get(url)
         ; Parse JSON response
-        return response
+        if FileExist("response.txt") {
+            FileDelete "response.txt"  ; Clear previous response file
+        }
+        FileAppend response, "response.txt"  ; Save response to a file for debugging
+        
+        return JSON.Load(response)
     }
 
     PostRequest(endpoint, data) {
@@ -41,7 +40,7 @@ class GitHubAPI {
 
     ; Search for a repo by name
     SearchRepos(query) {
-        return this.Request2("/search/repositories?q=" query)
+        return this.Request("/search/repositories?q=" query)
     }
 
     ; Download the zipball of a repo (no auth required for public repos)
@@ -53,6 +52,9 @@ class GitHubAPI {
     ; List all files in the repository directory
     ListRepoFiles(user, repo, path := "") {
         response := this.Request("/repos/" user "/" repo "/contents/" path)
+
+        
+        MsgBox response
         ; Extract files from response
         files := []
         for item in response {
@@ -67,6 +69,7 @@ class GitHubAPI {
     ; List all directories in the repository directory
     ListRepoDirs(user, repo, path := "") {
         response := this.Request("/repos/" user "/" repo "/contents/" path)
+        MsgBox Type(response)
         ; Extract directories from response
         dirs := []
         for item in response {
@@ -83,8 +86,7 @@ class GitHubAPI {
         endpoint := "/repos/" user "/" repo "/contents/" dir
         response := this.Request(endpoint)
         files := []
-        result := JSON.Load(response)
-        for thing in result {
+        for thing in response {
             if thing["type"] == "file" {
                 files.Push(thing["name"])
             }
@@ -145,7 +147,7 @@ class GitHubAPI {
     }
     ; Get detailed information about a repository
     GetRepoDetails(user, repo) {
-        return this.Request2("/repos/" user "/" repo)
+        return this.Request("/repos/" user "/" repo)
     }
 
     ; Get all branches in a repository
@@ -155,12 +157,12 @@ class GitHubAPI {
 
     ; Get recent commits from a repository
     GetCommits(user, repo) {
-        return this.Request2("/repos/" user "/" repo "/commits")
+        return this.Request("/repos/" user "/" repo "/commits")
     }
 
     ; Get the contents of a specific file in a repository
     GetFileContents(user, repo, filePath) {
-        return this.Request2("/repos/" user "/" repo "/contents/" filePath)
+        return this.Request("/repos/" user "/" repo "/contents/" filePath)
     }
 
     ; Star a repository
